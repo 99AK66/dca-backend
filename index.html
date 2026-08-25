@@ -29,6 +29,7 @@
   .lbl{font-size:10px;color:#64748b;margin-bottom:6px;font-family:'DM Mono',monospace;letter-spacing:1px;display:block;}
   .panel{background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.07);border-radius:14px;padding:16px;margin-top:16px;}
   .grid2{display:grid;grid-template-columns:1fr 1fr;gap:12px;}
+  .grid3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;}
   .btn-primary{width:100%;padding:13px;background:#f59e0b;border:none;border-radius:10px;color:#000;font-weight:800;font-size:15px;cursor:pointer;font-family:'DM Sans',sans-serif;margin-top:14px;}
   .btn-dashed{width:100%;padding:12px;background:transparent;color:#3b82f6;border:1.5px dashed rgba(59,130,246,0.5);border-radius:10px;font-size:14px;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif;margin-top:14px;}
   .r3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;}
@@ -131,7 +132,8 @@
 <!-- TAB 3: Multi DCA -->
 <div id="tab-multi" class="tab-content">
   <div class="panel" style="padding:16px;">
-    <div class="grid2">
+    <div class="grid3">
+      <div><label class="lbl">เงินเริ่มต้น (฿)</label><input class="inp" id="m-initial" type="number" placeholder="0"></div>
       <div><label class="lbl">DCA ต่อเดือน (฿)</label><input class="inp" id="m-monthly" type="number" placeholder="10000"></div>
       <div><label class="lbl">ระยะเวลา (ปี)</label><input class="inp" id="m-years" type="number" placeholder="30"></div>
     </div>
@@ -212,8 +214,8 @@ function switchStab(id,btn){
 }
 
 // ─── DCA math ───
-function calcDCA(monthly,years,annualRate){
-  const r=annualRate/100/12;let p=0;const data=[];
+function calcDCA(monthly,years,annualRate,initial=0){
+  const r=annualRate/100/12;let p=initial||0;const data=[];
   for(let m=1;m<=years*12;m++){
     p=(p+monthly)*(1+r);
     if(m%12===0)data.push({year:m/12,portfolio:Math.round(p)});
@@ -473,7 +475,8 @@ document.getElementById('m-rows').addEventListener('click',function(e){
   }
 });
 
-// Global monthly/years inputs
+// Global initial/monthly/years inputs
+document.getElementById('m-initial').addEventListener('input',()=>{refreshAllocDonut();scheduleResults();});
 document.getElementById('m-monthly').addEventListener('input',()=>{refreshAllocDonut();scheduleResults();});
 document.getElementById('m-years').addEventListener('input',()=>scheduleResults());
 
@@ -493,6 +496,7 @@ function autoBalance(){
 function refreshAllocDonut(){
   const active=mAssets.filter(a=>a.enabled&&(parseFloat(a.alloc)||0)>0);
   const totalAlloc=mAssets.filter(a=>a.enabled).reduce((s,a)=>s+(parseFloat(a.alloc)||0),0);
+  const initial=parseFloat(document.getElementById('m-initial').value)||0;
   const monthly=parseFloat(document.getElementById('m-monthly').value)||0;
   const ac=totalAlloc>100?'#f43f5e':totalAlloc===0?'#475569':totalAlloc<100?'#f59e0b':'#22c55e';
   const cx=72,cy=72,r=54,sw=20,circ=2*Math.PI*r;let cum=0;
@@ -507,7 +511,7 @@ function refreshAllocDonut(){
       <span style="font-size:12px;font-weight:700;color:${s.color};font-family:'DM Mono',monospace;flex:1">${s.name||'?'}</span>
       <span style="font-size:12px;color:#94a3b8;font-family:'DM Mono',monospace">${s.alloc}%</span>
     </div>
-    ${monthly>0?`<div style="font-size:10px;color:${s.color};font-family:'DM Mono',monospace;padding-left:18px;display:flex;justify-content:space-between"><span>${s.name||'?'}</span><span style="color:#64748b">฿${Math.round(monthly*(parseFloat(s.alloc)||0)/100).toLocaleString()}/เดือน</span></div>`:''}`).join('');
+    ${(monthly>0||initial>0)?`<div style="font-size:10px;color:${s.color};font-family:'DM Mono',monospace;padding-left:18px;display:flex;justify-content:space-between"><span>${s.name||'?'}</span><span style="color:#64748b">${initial>0?`฿${Math.round(initial*(parseFloat(s.alloc)||0)/100).toLocaleString()} เริ่มต้น + `:''}฿${Math.round(monthly*(parseFloat(s.alloc)||0)/100).toLocaleString()}/เดือน</span></div>`:''}`).join('');
   const wrap=document.getElementById('m-alloc-donut');
   wrap.style.borderColor=`${ac}30`;
   wrap.innerHTML=`
@@ -529,9 +533,10 @@ function refreshAllocDonut(){
 }
 
 function runResults(){
+  const initial=parseFloat(document.getElementById('m-initial').value)||0;
   const monthly=parseFloat(document.getElementById('m-monthly').value)||0;
   const years=parseInt(document.getElementById('m-years').value)||0;
-  const ready=monthly>0&&years>0;
+  const ready=(monthly>0||initial>0)&&years>0;
   const enabled=mAssets.filter(a=>a.enabled&&a.name&&parseFloat(a.cagr)>0&&parseFloat(a.alloc)>0);
   const totalAlloc=mAssets.filter(a=>a.enabled).reduce((s,a)=>s+(parseFloat(a.alloc)||0),0);
   const allocOk=Math.abs(totalAlloc-100)<0.01;
@@ -545,20 +550,20 @@ function runResults(){
 
   // Build chart data
   const chartData=[];
-  for(let y=1;y<=years;y++)chartData.push({year:y,totalInvested:monthly*y*12,combined:0});
+  for(let y=1;y<=years;y++)chartData.push({year:y,totalInvested:monthly*y*12+initial,combined:0});
   enabled.forEach(a=>{
-    const share=(parseFloat(a.alloc)||0)/100,m=monthly*share;
-    calcDCA(m,years,parseFloat(a.cagr)).forEach(r=>{
+    const share=(parseFloat(a.alloc)||0)/100,m=monthly*share,initShare=initial*share;
+    calcDCA(m,years,parseFloat(a.cagr),initShare).forEach(r=>{
       chartData[r.year-1][a.name]=r.portfolio;
       chartData[r.year-1].combined=(chartData[r.year-1].combined||0)+r.portfolio;
     });
   });
 
   const summaries=enabled.map(a=>{
-    const share=(parseFloat(a.alloc)||0)/100,m=monthly*share;
-    const rows=calcDCA(m,years,parseFloat(a.cagr));
-    const fin=rows[rows.length-1]?.portfolio??0,inv=m*years*12;
-    return{...a,ma:m,final:fin,invested:inv,
+    const share=(parseFloat(a.alloc)||0)/100,m=monthly*share,initShare=initial*share;
+    const rows=calcDCA(m,years,parseFloat(a.cagr),initShare);
+    const fin=rows[rows.length-1]?.portfolio??0,inv=m*years*12+initShare;
+    return{...a,ma:m,initShare,final:fin,invested:inv,
       mult:inv>0?(fin/inv).toFixed(1):'—',
       h1:rows.find(r=>r.portfolio>=1e6)?.year??null,
       h10:rows.find(r=>r.portfolio>=1e7)?.year??null,
@@ -566,7 +571,7 @@ function runResults(){
   });
 
   const combFinal=summaries.reduce((s,a)=>s+a.final,0);
-  const totalInv=monthly*years*12;
+  const totalInv=monthly*years*12+initial;
   const combMult=totalInv>0?(combFinal/totalInv).toFixed(1):'—';
 
   document.getElementById('m-results').style.display='block';
@@ -582,7 +587,7 @@ function runResults(){
         <span style="font-size:13px;font-weight:800;color:${a.color};font-family:'DM Mono',monospace">${a.name}</span>
         <span style="font-size:11px;color:${a.color};background:${a.color}20;border-radius:5px;padding:1px 6px;font-family:'DM Mono',monospace">${a.alloc}%</span>
       </div>
-      <div style="font-size:10px;color:#475569;font-family:'DM Mono',monospace;margin-top:2px">฿${Math.round(a.ma).toLocaleString()}/เดือน</div>
+      <div style="font-size:10px;color:#475569;font-family:'DM Mono',monospace;margin-top:2px">${a.initShare>0?`฿${Math.round(a.initShare).toLocaleString()} เริ่มต้น + `:''}฿${Math.round(a.ma).toLocaleString()}/เดือน</div>
       <div style="font-size:18px;font-weight:800;color:#e2e8f0;margin-top:6px">${fB(a.final)}</div>
       <div style="font-size:11px;color:#22c55e;margin-top:4px">${a.mult}x</div>
       <div style="font-size:10px;color:#64748b;margin-top:2px;font-family:'DM Mono',monospace">100M: ${a.h100?`ปีที่ ${a.h100}`:'—'}</div>
